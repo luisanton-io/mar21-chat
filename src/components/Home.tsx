@@ -2,6 +2,7 @@ import { useState, useEffect, ChangeEvent, FormEvent } from 'react'
 import { Container, Col, Row, Form, ListGroup, Button } from 'react-bootstrap'
 import { Room, Message, User } from '../typings/interfaces'
 import { io } from 'socket.io-client'
+import LocalUser from "../local/User"
 
 const ADDRESS = 'http://localhost:3030'
 const socket = io(ADDRESS, { transports: ['websocket'] })
@@ -18,7 +19,7 @@ const Home = () => {
 
   const checkOnlineUsers = async () => {
     try {
-      const response = await fetch(ADDRESS + '/online-users')
+      const response = await fetch(ADDRESS + '/users/online')
       const users = await response.json()
       console.log('users', users)
       setOnlineUsers(users.onlineUsers)
@@ -32,7 +33,29 @@ const Home = () => {
     // but I'm setting up event listeners just once!
     // they will live for the lifetime of the chat
 
-    console.log("I'm setting the event listeners!")
+    console.log("I'm setting the event listeners!");
+
+    //if there is a user in the localstorage, let's use it
+    (async () => {
+      const randomName = await LocalUser.randomName
+      console.log(randomName)
+
+      if (LocalUser.id) {
+        const response = await fetch(ADDRESS + '/users/' + LocalUser.id)
+
+        if (response.ok) {
+
+          const user = await response.json()
+          setUserName(user.username)
+
+          socket.emit('setUsername', { username: user.username, room })
+
+          getChatHistory(room)
+        }
+      }
+    })()
+
+    //otherwise we will be letting the user create a new "account"
 
     socket.on('connect', () => {
       // with on we're listening for an event
@@ -69,7 +92,22 @@ const Home = () => {
 
   const handleUsernameSubmit = (e: FormEvent) => {
     e.preventDefault()
-    socket.emit('setUsername', { username: userName, room: room })
+    socket.emit('setUsername', { username: userName, room: room });
+
+    (async () => {
+      const response = await fetch(ADDRESS + "/users", {
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ username: userName })
+      })
+
+      const { _id } = await response.json()
+
+      LocalUser.id = _id
+
+    })()
 
     getChatHistory(room)
     // with emit we're sending an event to the server
